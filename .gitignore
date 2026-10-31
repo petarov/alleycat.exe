@@ -1,5 +1,6 @@
 .DS_Store
 *.exe
+CAT.EXE
 
 re/*.txt
 re/*.asm

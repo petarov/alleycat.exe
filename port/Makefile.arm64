@@ -1,0 +1,90 @@
+# Native Apple Silicon build using the existing portable C game backend.
+# Run from port/: make -f Makefile.arm64 all check smoke gameplay import-check app
+BUILD ?= build/macos-arm64-external
+EXE ?= ../CAT.EXE
+PYTHON ?= python3
+SDL_DIR ?= third_party
+CC := clang
+VER := 1.3.3
+MACOS_MIN ?= 11.0
+ICON ?=
+LISTING := $(BUILD)/CAT.asm
+CFLAGS := -arch arm64 -mmacosx-version-min=$(MACOS_MIN) -std=c11 -O2 -Wall -Wextra -Isrc -F$(SDL_DIR) -DALLEYCAT_EXTERNAL_DATA
+LDFLAGS := -arch arm64 -mmacosx-version-min=$(MACOS_MIN) -F$(SDL_DIR) -framework SDL2 \
+           -framework Cocoa -Wl,-rpath,@executable_path/../../$(SDL_DIR) -Wl,-rpath,@executable_path
+GAME_OBJS := $(addprefix $(BUILD)/,bios.o font8x8.o speaker.o runtime.o cat_code.o game_data.o)
+TEST_OBJS := $(BUILD)/game_data_test_setup.o
+SMOKE_SECONDS ?= 10
+
+all: $(BUILD)/alleycat
+
+$(BUILD):
+	mkdir -p $@
+
+$(LISTING): $(EXE) tools/dos2listing.py | $(BUILD)
+	$(PYTHON) tools/dos2listing.py $(EXE) $@
+
+$(BUILD)/cat_code.c: $(LISTING) $(EXE) tools/asm2c.py tools/asm2nasm.py
+	$(PYTHON) tools/asm2c.py $(LISTING) $(EXE) $@ --external-data
+	@if grep -q 'game_trap.* /\*.* \*/' $@; then \
+		if grep 'game_trap.* /\*' $@ | grep -v 'ran past the last instruction'; then \
+			echo 'Unsupported instruction in C translation'; rm -f $@; exit 1; \
+		fi; \
+	fi
+
+$(BUILD)/cat_code.o: $(BUILD)/cat_code.c src/runtime.h src/bios.h
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: src/%.c src/bios.h src/runtime.h src/font8x8.h src/speaker.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/platform.o: CFLAGS += -DALLEYCAT_VERSION='"$(VER)-arm64"'
+$(BUILD)/platform.o: Makefile.arm64
+$(BUILD)/platform.o $(BUILD)/game_data.o: src/game_data.h
+
+$(BUILD)/game_data_macos.o: src/game_data_macos.m src/game_data.h | $(BUILD)
+	$(CC) $(CFLAGS) -fobjc-arc -c $< -o $@
+
+$(BUILD)/game_data_test_setup.o: tests/game_data_test_setup.c src/game_data.h | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/import_check: tests/game_data_main.c $(BUILD)/game_data.o
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
+
+import-check: $(BUILD)/import_check
+	./$(BUILD)/import_check '$(EXE)'
+
+$(BUILD)/paths_check: tests/game_data_paths_main.m $(BUILD)/game_data.o $(BUILD)/game_data_macos.o
+	$(CC) $(CFLAGS) -fobjc-arc $^ $(LDFLAGS) -o $@
+
+paths-check: $(BUILD)/paths_check
+	./$(BUILD)/paths_check '$(EXE)'
+
+$(BUILD)/alleycat: $(BUILD)/platform.o $(BUILD)/game_data_macos.o $(GAME_OBJS)
+	$(CC) $^ $(LDFLAGS) -o $@
+
+$(BUILD)/check_title: tests/check_main.c tests/check_title_c.c $(GAME_OBJS) $(TEST_OBJS)
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
+
+check: $(BUILD)/check_title
+	ALLEYCAT_TEST_EXE='$(EXE)' ./$(BUILD)/check_title $(BUILD)/vram_game.bin
+	$(PYTHON) tools/ref_title.py $(EXE) $(BUILD)/vram_ref.bin
+	cmp $(BUILD)/vram_game.bin $(BUILD)/vram_ref.bin
+	@echo 'check: ARM64 title backdrop matches independent reference'
+
+$(BUILD)/smoke: tests/smoke_main.c $(GAME_OBJS) $(TEST_OBJS)
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
+
+smoke: $(BUILD)/smoke
+	ALLEYCAT_TEST_EXE='$(EXE)' ./$(BUILD)/smoke $(BUILD)/vram_smoke.bin $(SMOKE_SECONDS)
+
+$(BUILD)/gameplay: tests/gameplay_main.c $(GAME_OBJS) $(TEST_OBJS)
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
+
+gameplay: $(BUILD)/gameplay
+	ALLEYCAT_TEST_EXE='$(EXE)' ./$(BUILD)/gameplay $(BUILD)/vram_gameplay.bin
+
+app: $(BUILD)/alleycat
+	$(PYTHON) tools/package_macos_arm64.py $(BUILD)/alleycat $(SDL_DIR)/SDL2.framework '$(BUILD)/Alley Cat.app' --version $(VER) --minimum-os $(MACOS_MIN) $(if $(ICON),--icon "$(ICON)")
+
+.PHONY: all check smoke gameplay import-check paths-check app

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Translate the Ghidra listing of CAT.EXE (re/CAT.asm) into C, for the web
-(WebAssembly) build. The C counterpart of asm2nasm.py, whose listing parser
+"""Translate the listing of CAT.EXE into C for native and WebAssembly builds.
+The C counterpart of asm2nasm.py, whose listing parser
 and tables it shares.
 
-Usage: asm2c.py <re/CAT.asm> <CAT.EXE> <out.c>
+Usage: asm2c.py <re/CAT.asm> <CAT.EXE> <out.c> [--external-data]
 
 The output is one function, game_run(): a switch on pc with one case per
 instruction (its CS offset), in listing order, so straight-line code falls
@@ -17,6 +17,8 @@ build can give control back to the browser and continue later.
 The data segment image (CAT.EXE from file offset 300h) is emitted as the
 ds_base array. Instructions the translator does not handle become a call to
 game_trap(<cs>), which aborts at runtime with the offset.
+With --external-data, ds_base is zero-initialized instead; the native importer
+loads the user's original file before starting the game.
 """
 import os
 import re
@@ -328,6 +330,7 @@ def marker_lines(items, synthetic, base):
 
 def main():
     src, exe, out = sys.argv[1], sys.argv[2], sys.argv[3]
+    external_data = '--external-data' in sys.argv[4:]
     if set(MARKERS_C) != set(MARKERS):
         sys.exit('asm2c.py: MARKERS_C and asm2nasm.MARKERS differ at %s' % ', '.join(
             '%04X' % x for x in sorted(set(MARKERS_C) ^ set(MARKERS))))
@@ -380,10 +383,14 @@ def main():
         f.write('/* The data segment (DS = para 0010h): DS:0000..%04X from CAT.EXE, the\n'
                 ' * rest zero (the port\'s help lines are copied in by runtime.c). */\n'
                 % (DS_IMAGE_SIZE - 1))
-        f.write('uint8_t ds_base[SEGMENT_SIZE] = {\n')
-        for i in range(0, len(image), 16):
-            f.write('    %s,\n' % ', '.join('0x%02x' % b for b in image[i:i + 16]))
-        f.write('};\n\n')
+        if external_data:
+            f.write('/* Loaded from the user-supplied CAT.EXE before game_start. */\n')
+            f.write('uint8_t ds_base[SEGMENT_SIZE];\n\n')
+        else:
+            f.write('uint8_t ds_base[SEGMENT_SIZE] = {\n')
+            for i in range(0, len(image), 16):
+                f.write('    %s,\n' % ', '.join('0x%02x' % b for b in image[i:i + 16]))
+            f.write('};\n\n')
         f.write('#ifdef __EMSCRIPTEN__\n'
                 '/* Every 65536th backward jump checks whether the slice is used up, so a\n'
                 ' * loop without BIOS or port calls cannot keep the browser waiting. */\n'

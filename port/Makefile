@@ -222,3 +222,15 @@ clean:
 	@-rm -rf $(BUILD)/
 
 .PHONY: all run check smoke clean linux-image linux linux-check windows-image windows web-image web pack
+
+# Apple Silicon uses the portable C backend in a separate build directory.
+arm64:
+	$(MAKE) -f Makefile.arm64 all
+
+arm64-check:
+	$(MAKE) -f Makefile.arm64 check smoke gameplay import-check paths-check
+
+arm64-app:
+	$(MAKE) -f Makefile.arm64 app
+
+.PHONY: arm64 arm64-check arm64-app

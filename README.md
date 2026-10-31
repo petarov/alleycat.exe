@@ -25,6 +25,15 @@ A recompilation of [Alley Cat](https://wikipedia.org/wiki/Alley_Cat_(video_game)
 
 The macOS build is not signed or notarized: allow it under *Privacy & Security* or run `xattr -dr com.apple.quarantine <folder>`.
 
+## Native Apple Silicon (ARM64)
+
+
+The ARM64 app includes SDL2 and the translated game logic, **without the original CAT.EXE or its game data segment**. Build it using the instructions below and open **Alley Cat.app**. On first launch, choose your supported original DOS `CAT.EXE` (55,067 bytes). The app verifies the file and saves a copy in `~/Library/Application Support/Alley Cat/`; subsequent launches use that copy automatically. Copies imported by earlier releases in `~/Library/Application Support/RetroShopPT/Alley Cat/` are recognised and copied to the new folder automatically; the old copy is preserved. Cancelling quits normally; unsupported files are rejected. No Rosetta or DOSBox is required. The app packager uses a local ad-hoc signature and is not Apple-notarized.
+
+To build from source, supply your own supported `CAT.EXE`, install the universal SDL2 framework and follow [the Apple Silicon build instructions](BUILDING.md#native-apple-silicon-arm64). Generated listings, generated game C, game executables and app bundles are excluded from source control.
+
+Validation on an M1 Pro with macOS 27.2: the title framebuffer matches the independent reference byte for byte; headless startup, skill selection, starting a game and cursor movement pass. Import validation covers valid, missing, truncated and corrupt files. Native first-run selection, rejecting a wrong file, cancelling and reusing an imported copy were also checked. This is a port of the existing runtime, with no claim of a complete gameplay or audio-fidelity validation. The build targets macOS 11 or newer; older macOS versions and an M4 have not been physically tested.
+
 ## Controls
 
 - In the options menu, `K`, `H`, `T` and `A` (or 1 to 4) choose the skill level. The skill sets the starting difficulty; the game raises it as you complete levels.

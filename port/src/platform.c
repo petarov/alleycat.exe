@@ -15,6 +15,9 @@
 #include "bios.h"
 #include "font8x8.h"
 #include "speaker.h"
+#ifdef ALLEYCAT_EXTERNAL_DATA
+#include "game_data.h"
+#endif
 
 #include <SDL2/SDL.h>
 
@@ -385,6 +388,16 @@ static int game_thread(void *unused)
 
 int main(int argc, char *argv[])
 {
+#ifdef ALLEYCAT_EXTERNAL_DATA
+    /* Initialise Cocoa through SDL before showing a native panel, but wait
+     * to create the fullscreen game window until after import. */
+    if (SDL_Init(SDL_INIT_VIDEO) != 0)
+        return 1;
+    if (!game_data_prepare()) {
+        SDL_Quit();
+        return 0;
+    }
+#endif
     /* -pcjr starts with the PCjr colors on (Ctrl-P) and --window in a window,
      * without saving either choice. Other arguments are ignored. */
     bool force_pcjr = false, force_window = false;
